@@ -1,0 +1,41 @@
+# === filename: docker-compose.yml ===
+services:
+  backend:
+    image: ghcr.io/${GHCR_OWNER:-iamhelios04}/openhome-siem-backend:${IMAGE_TAG:-latest}
+    pull_policy: missing
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./data/siem.db}
+      SYSLOG_UDP_PORT: 514
+      SYSLOG_TCP_PORT: 601
+      SYSLOG_TIMEZONE: ${SYSLOG_TIMEZONE:-Asia/Kolkata}
+      ENABLE_SYSLOG_LISTENER: ${ENABLE_SYSLOG_LISTENER:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:5173}
+    ports:
+      - "${SYSLOG_UDP_PORT:-5514}:514/udp"
+      - "${SYSLOG_TCP_PORT:-6601}:601/tcp"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:-iamhelios04}/openhome-siem-frontend:${IMAGE_TAG:-latest}
+    pull_policy: missing
+    ports:
+      - "${WEB_BIND_IP:-127.0.0.1}:${WEB_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

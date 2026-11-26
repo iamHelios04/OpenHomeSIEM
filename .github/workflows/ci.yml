@@ -1,0 +1,44 @@
+name: Build and smoke test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-compose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Create local test settings
+        run: cp .env.example .env
+
+      - name: Validate Compose configuration
+        run: docker compose -f docker-compose.yml -f docker-compose.source.yml config --quiet
+
+      - name: Build containers
+        run: docker compose -f docker-compose.yml -f docker-compose.source.yml build
+
+      - name: Start application
+        run: docker compose -f docker-compose.yml -f docker-compose.source.yml up -d
+
+      - name: Check API through the dashboard proxy
+        run: |
+          for attempt in $(seq 1 30); do
+            if docker compose -f docker-compose.yml -f docker-compose.source.yml exec -T frontend wget -qO- http://127.0.0.1/api/health | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.yml -f docker-compose.source.yml ps
+          docker compose -f docker-compose.yml -f docker-compose.source.yml logs --tail=100
+          exit 1
+
+      - name: Stop application
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.source.yml down

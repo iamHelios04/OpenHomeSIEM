@@ -1,0 +1,25 @@
+# === filename: .gitignore ===
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*.db*
+*.sqlite*
+*.sqlite3*
+databases/
+backups/
+*.bak*
+*.backup*
+*.dump
+*.sql.gz
+.venv/
+venv/
+node_modules/
+frontend/dist/
+frontend/.vite/
+data/
+release/
+*.zip
+*.log
+coverage/
