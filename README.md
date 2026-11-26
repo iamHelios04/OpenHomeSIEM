@@ -1,189 +1,244 @@
-# OpenHomeSIEM
+# 🏠 OpenHomeSIEM
 
-## What is this
+**A private, self-hosted syslog collector and investigation dashboard for your home lab.**
 
-OpenHomeSIEM is a self-hosted syslog collector and investigation console designed for a home lab today and additional network devices over time. The first profile targets a D-Link DSL-8251CG1 router. A FastAPI service stores normalized RFC 3164/RFC 5424 events in SQLite, listens for UDP/514 and TCP/601 inside its container, discovers DHCP clients, runs local anomaly rules, and broadcasts updates over WebSocket. A React console provides dashboards, search, device inventory, investigations, analyst alerts, and reports.
+[![Build and smoke test](https://github.com/iamHelios04/OpenHomeSIEM/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/iamHelios04/OpenHomeSIEM/actions/workflows/ci.yml)
 
-GitHub distributes application source and container images only. Each person runs a separate collector; syslog goes directly from their router to their own collector and stays in that installation's local `data/` directory and SQLite database. Syslog and database contents are never sent to GitHub.
+OpenHomeSIEM receives syslog from your router and other devices, saves it in a local database, and shows events in a live web dashboard. Each installation is its own collector: your logs and database stay on the computer where you installed it.
 
-GitHub Actions builds both containers and checks the API health endpoint on pushes and pull requests. Pushing a `v*` version tag builds and publishes `linux/amd64` and `linux/arm64` images to GitHub Container Registry (GHCR).
+> **Quick start:** Install Docker, clone or download this repository, then run the installer for your operating system. For now, use the **source-build** option because a tagged container image release has not been published yet.
 
-## Architecture diagram (ASCII)
+## ✨ What you get
 
-```text
-D-Link router / future syslog sources
-         | UDP 5514 or optional TCP 6601
-         v
-+-------------------------+       HTTP /api + WebSocket /ws/logs
-| FastAPI collector       | <----------------------------------+
-| parser -> tracker -> DB |                                    |
-| anomaly + retention     |                                    v
-+------------+------------+                         +------------------+
-             |                                      | React / Vite UI  |
-             v                                      | dashboard/SOC   |
-      SQLite (dev)                                   +------------------+
-      PostgreSQL-ready URL
+- 📥 Receive standard RFC 3164 and RFC 5424 syslog over UDP, with optional TCP support.
+- 🔎 Search and review events, devices, alerts, investigations, and reports in a browser dashboard.
+- ⚡ Stream new events and detections to the dashboard as they arrive.
+- 🧠 Run local anomaly rules without sending log data to an AI service.
+- 💾 Keep settings and the SQLite database on your own computer.
+- 🐳 Run the same Docker Compose setup on Windows, macOS, and Linux.
+
+## 🗺️ How it works
+
+Each person runs a separate copy. GitHub provides the project files and, after a versioned release, may provide container images. **GitHub does not receive your syslog traffic or local database.**
+
+```mermaid
+flowchart LR
+    R["🏠 Router and devices<br/>Syslog sender"]
+    F["🛡️ Home or VPN firewall<br/>Allow trusted senders"]
+    subgraph HOST["🖥️ Your computer · Docker Compose"]
+        direction LR
+        P["📡 Published ports<br/>UDP 5514 · optional TCP 6601"]
+        B["⚙️ FastAPI collector<br/>Parse · normalize · detect"]
+        D[("💾 Local SQLite database<br/>./data/siem.db")]
+        W["🌐 Web dashboard<br/>TCP 8080 · localhost by default"]
+        P --> B
+        B --> D
+        B -->|"API + WebSocket"| W
+    end
+    U["👤 Your browser<br/>http://localhost:8080"]
+    R -->|"Syslog stays on your network"| F --> P
+    W --> U
+    G["📦 GitHub repository<br/>Source, docs, CI"]
+    HOST -. "No log or database upload" .-> G
+
+    classDef source fill:#fff0c2,stroke:#dd8b00,color:#3d2b00,stroke-width:2px
+    classDef network fill:#e7f0ff,stroke:#3973c6,color:#10284a,stroke-width:2px
+    classDef service fill:#d9f7e8,stroke:#17834c,color:#103b27,stroke-width:2px
+    classDef storage fill:#f0e5ff,stroke:#7b45b5,color:#30174a,stroke-width:2px
+    classDef user fill:#ffe5ec,stroke:#bf4562,color:#4d1525,stroke-width:2px
+    classDef repo fill:#e9edf2,stroke:#596777,color:#202a35,stroke-width:2px
+    class R source
+    class F,P network
+    class B,W service
+    class D storage
+    class U user
+    class G repo
 ```
 
-## Install on another computer
+## 🚀 Install it
 
-OpenHomeSIEM runs on Windows, macOS, and Linux through Docker Compose. A fresh installation generates a private `.env` with a random secret key, creates an empty local SQLite database under `data/`, pulls the published containers, starts them, and checks API/dashboard health. No Python, Node.js, PostgreSQL, or separate database setup is required.
+### 1. Install the container software
 
-1. Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/) on Windows or macOS. On Ubuntu, install [Docker Engine and the Compose plugin](https://docs.docker.com/engine/install/ubuntu/).
-2. Clone the repository (or download and extract its ZIP) onto the computer that will collect logs:
+| Computer | Install first |
+|---|---|
+| **Windows 10/11** | [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/). Start Docker Desktop and wait until it says Docker is running. |
+| **macOS** | [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/). Choose the download for Apple silicon or Intel, then open Docker Desktop and wait until it is running. |
+| **Ubuntu / Debian / other Linux server** | Install Docker Engine and the Docker Compose plugin using the [official Linux instructions](https://docs.docker.com/engine/install/). On Linux, your account must be able to run Docker; use `sudo` if you have not configured Docker access for your user. |
 
-   ```sh
-   git clone https://github.com/iamHelios04/OpenHomeSIEM.git
-   cd OpenHomeSIEM
-   ```
+You do **not** need to install Python, Node.js, or a separate database for the normal Docker installation.
 
-3. Start it:
+### 2. Get the project
 
-   - **Windows:** double-click `install.cmd`, or run `.\install.ps1` from PowerShell.
-   - **macOS:** run `sh ./install.sh` in Terminal.
-   - **Ubuntu/Linux:** run `sh ./install.sh` (use `sudo` on Ubuntu Server).
-
-The default dashboard address is `http://localhost:8080`. To use the app later, double-click `start.cmd` / `stop.cmd` on Windows or run `sh ./start.sh` / `sh ./stop.sh` on macOS and Linux. Stopping the app preserves its settings and database. To update to the latest published images, run `docker compose pull` and `docker compose up -d` from the project directory.
-
-Each computer keeps its settings in `.env` and its database in `data/siem.db`; both remain local and are ignored by Git. Never commit or upload `.env`, `data/`, backups, or logs. A fresh clone starts with a new database. To move an existing installation, stop the app and copy its `.env` and `data/` directory to the new installation folder before starting it.
-
-The published containers are the default runtime. For an optional source build, run `sh ./install.sh --source-build` on macOS/Linux, `.\install.ps1 -SourceBuild` in PowerShell, or `install.cmd -SourceBuild` on Windows. This setting is saved in `.env`; subsequent starts use the source-build Compose overlay. To switch back to published images, set `BUILD_FROM_SOURCE=false` in `.env`.
-
-To publish images for a new release, push a version tag such as `v1.0.1`. After the first release, set both `openhome-siem-backend` and `openhome-siem-frontend` package visibility to **Public** in GitHub Packages so installations can pull them without credentials. Choose the desired version in a local `.env` with `IMAGE_TAG=1.0.1`; `latest` is used by default.
-
-## License
-
-No license is granted. All rights are reserved; public visibility of this repository does not grant permission to reuse, modify, or distribute the source.
-
-## Ubuntu Server
-
-On the server, install Docker Engine and its Compose plugin, then run:
+**Option A — Git (recommended):** Install Git if your computer does not already have it, open a terminal, and run:
 
 ```sh
 git clone https://github.com/iamHelios04/OpenHomeSIEM.git
 cd OpenHomeSIEM
-sudo sh ./install.sh
+```
+
+**Option B — ZIP:** On the GitHub repository page, select **Code → Download ZIP**, then extract the ZIP. Open a terminal in the extracted `OpenHomeSIEM` folder before running the installer. The folder contains the scripts and Compose files the installer needs.
+
+### 3. Run the installer for your system
+
+The source-build option builds the containers on your own computer. Use this option until a published versioned image is available.
+
+<details>
+<summary><b>🍎 macOS</b></summary>
+
+Open **Terminal**, go to the project folder, and run:
+
+```sh
+cd OpenHomeSIEM
+sh ./install.sh --source-build
+```
+
+If you already opened Terminal in the project folder, skip the `cd` line.
+
+</details>
+
+<details>
+<summary><b>🪟 Windows</b></summary>
+
+Open **PowerShell** in the project folder and run:
+
+```powershell
+.\install.ps1 -SourceBuild
+```
+
+Or double-click `install.cmd` from File Explorer, or run it in Command Prompt:
+
+```bat
+install.cmd -SourceBuild
+```
+
+If PowerShell says scripts are disabled, use `install.cmd -SourceBuild`; it launches the installer with the required process-level policy and does not change your system policy.
+
+</details>
+
+<details>
+<summary><b>🐧 Linux desktop or server</b></summary>
+
+From a terminal in the project folder:
+
+```sh
+sh ./install.sh --source-build
+```
+
+On Ubuntu Server, if your account does not have Docker access, run:
+
+```sh
+sudo sh ./install.sh --source-build
 sudo docker compose ps
 ```
 
-The dashboard is bound to the server's localhost only. From your laptop, create an SSH tunnel:
+When you installed with `sudo`, use `sudo` for the later Docker commands and the start/stop scripts too.
+
+</details>
+
+The installer checks Docker, creates a private `.env` file with a random application key, creates the local `data/` folder, builds and starts the containers, and checks that the dashboard and API respond.
+
+## ✅ Open it and check that it is running
+
+On the computer running the collector, open **[http://localhost:8080](http://localhost:8080)**. The installer also checks the API at `http://localhost:8080/api/health`.
+
+To see container status or logs, run these commands from the project folder:
+
+```sh
+docker compose ps
+docker compose logs -f
+```
+
+Press **Ctrl+C** to stop viewing the logs; this does not stop the application.
+
+### Start, stop, and update
+
+| Task | Windows PowerShell | macOS / Linux |
+|---|---|---|
+| Start | `.\start.ps1` | `sh ./start.sh` |
+| Stop | `.\stop.ps1` | `sh ./stop.sh` |
+| View status | `docker compose ps` | `docker compose ps` |
+| View logs | `docker compose logs -f` | `docker compose logs -f` |
+
+You can also double-click `start.cmd` or `stop.cmd` on Windows. Stopping the containers keeps your settings and database. On Linux, add `sudo` to these commands if you installed with `sudo`.
+
+When a published image release is available, update it from the project folder with `docker compose pull` followed by `docker compose up -d`. A source-built installation can update the code and rebuild by pulling the latest repository changes, then running its start script.
+
+## 📡 Send logs from your router
+
+The installer starts the collector listener, but **it does not change your router settings**. Configure your router separately to send remote syslog to the computer running OpenHomeSIEM.
+
+| Setting | Default |
+|---|---|
+| Protocol and port | **UDP 5514** (recommended); optional TCP **6601** |
+| Dashboard | TCP **8080**, bound to `127.0.0.1` by default |
+| Internal container listener | UDP **514** and TCP **601** |
+
+1. Give the collector computer a stable LAN address, ideally with a DHCP reservation in your router.
+2. In your router's remote logging or syslog settings, enable syslog and enter the collector computer's **LAN IP address** and **UDP port 5514**. Choose TCP/6601 only if your sender supports TCP syslog.
+3. Allow the selected syslog port through the computer or network firewall for trusted devices on your LAN.
+4. Open the dashboard and select **View live events** to confirm messages arrive.
+
+**Same home network:** Port forwarding on your internet router is usually not needed. The sender targets the collector's LAN IP.
+
+**Sender outside your home:** Prefer a VPN between the sender network and the collector. Public UDP syslog is unencrypted and can be spoofed. If you still expose a syslog port to the internet, restrict the source addresses with a firewall. Do not expose the dashboard publicly. The default dashboard binding is local-only; access it remotely through a VPN or SSH tunnel.
+
+For an SSH tunnel from your laptop to a Linux server, run this on the laptop:
 
 ```sh
 ssh -L 8080:127.0.0.1:8080 USER@COLLECTOR_SERVER
 ```
 
-Then open `http://localhost:8080` on the laptop.
+Then open `http://localhost:8080` on the laptop while the SSH session stays connected.
 
-### Connect a router
+### Time zone
 
-The collector uses these host ports by default: dashboard TCP/8080, syslog UDP/5514, and optional syslog TCP/6601. The dashboard binds to localhost by default; the API and WebSocket are proxied internally. Docker translates syslog to its internal UDP/514 and TCP/601 listeners.
+RFC 3164 syslog timestamps do not include a time zone. The default is `Asia/Kolkata`. If the sender uses a different time zone, edit `SYSLOG_TIMEZONE` in the local `.env` file to match it, then restart OpenHomeSIEM.
 
-RFC 3164 syslog messages do not carry a timezone. Fresh installs default to `SYSLOG_TIMEZONE=Asia/Kolkata`; if the router uses another timezone, edit that value in `.env` to match the router and restart the app.
+## 🔐 Your logs and database
 
-1. Find the collector computer's **LAN or VPN IP address**. For example, use `ipconfig` on Windows or `ip addr` on Linux.
-2. In the router's remote logging/syslog settings, enable remote syslog and set the destination to that IP and **UDP port 5514** by default. Use TCP/6601 only if the router supports TCP syslog.
-3. Allow inbound UDP/5514 through the collector computer's firewall only from the trusted home/VPN network. Allow TCP/6601 only if using TCP.
-4. Open `http://localhost:8080`, choose **View live events**, and confirm incoming records appear.
+- Every installation creates its own `.env` and local SQLite database at `data/siem.db`.
+- Logs are stored on the collector computer. They are not automatically sent to GitHub or to other users' installations.
+- `.env` contains your private application key. Keep it and the `data/` folder private; both are excluded from Git.
+- To back up an installation, stop it and securely copy both `.env` and `data/`. Restore those files into the new project folder before starting the app.
+- To start with a completely fresh database, stop the app and back up or remove the local `data/` folder. This deletes that installation's stored logs.
 
-Do not port-forward your home router to the internet. On a public server, keep the dashboard private and reachable only through a VPN or SSH tunnel. Prefer a VPN for syslog; otherwise restrict UDP/5514 ingress to your home public IP using the cloud firewall/security group. Public UDP syslog is unencrypted and can be observed or spoofed in transit. Docker-published ports may bypass UFW rules; do not rely on `ufw allow` or UFW alone to protect published container ports. Apply source restrictions in the cloud firewall before traffic reaches the host, or configure and test Docker-aware filtering (for example, Docker's `DOCKER-USER` chain) using the [Docker firewall documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/). If a port is already in use, edit the matching value in `.env` and restart with `start.cmd` or `sh ./start.sh`.
+## ⚙️ Common settings
 
-## Developer setup without Docker
+Edit the local `.env` file in a text editor, then restart the containers for changes to take effect.
 
-### Backend setup (Python venv, pip install, run uvicorn)
-
-Use Python 3.11 or newer. In PowerShell:
-
-```powershell
-cd backend
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-Copy-Item ..\.env.example ..\.env
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-The default database is `backend/data/siem.db`. To listen on privileged ports on Windows, run the terminal with the required permissions or set the syslog listener to unprivileged ports and use port forwarding. The API can run without syslog listeners by setting `ENABLE_SYSLOG_LISTENER=false`.
-
-Schema changes are versioned under `backend/migrations/` and applied with Alembic at startup while `AUTO_MIGRATE=true`. For a controlled deployment, set it to `false` and run `alembic upgrade head` from the `backend/` directory as a deployment step before starting the API.
-
-### Frontend setup (npm install, npm run dev)
-
-In another terminal:
-
-```powershell
-cd frontend
-npm install
-npm run dev -- --host 0.0.0.0
-```
-
-Vite serves the console on `http://localhost:5173` and proxies `/api` and `/ws` to the backend. Set `VITE_API_BASE_URL` or `VITE_WS_URL` only when the services are hosted separately.
-
-## How to add a new device in future
-
-Set `source_device` when posting logs to `/api/ingest`; syslog packets are identified by sender IP. Add a parser in `backend/services/parsers/` that implements `parse(raw_line) -> ParsedLog`, register its device type in the parser registry, then add detection or device-tracking behavior if that source has useful fields. Keep the normalized `LogRecord` schema stable so new sources share the same filters, charts, and reports.
-
-## How to enable AI features in future
-
-`backend/services/ai_service.py` defines asynchronous interfaces for anomaly summaries, log classification, and natural-language search. The default implementation is deliberately offline and returns a clear disabled result. To add a provider, configure its credentials through environment variables, implement a provider class behind those interfaces, and add request limits, redaction, timeouts, and audit logging before sending home-network data externally. The schema has `embedding`, `ai_summary`, and `ai_tags` fields ready for later migrations.
-
-## Environment variables reference
-
-| Variable | Default | Purpose |
+| Variable | Default | What it controls |
 |---|---|---|
-| `DATABASE_URL` | `sqlite+aiosqlite:///./data/siem.db` | Async SQLAlchemy database URL; PostgreSQL can be used with an async driver. |
-| `GHCR_OWNER` | `iamhelios04` | GitHub account or organization that owns the published container images. |
-| `IMAGE_TAG` | `latest` | Published container image version to install. |
-| `BUILD_FROM_SOURCE` | `false` | Use the local source-build Compose overlay instead of pulling GHCR images. |
-| `AUTO_MIGRATE` | `true` | Apply Alembic revisions on startup; disable when migrations are run as a separate deployment step. |
-| `SYSLOG_UDP_HOST` | `0.0.0.0` | UDP listener bind address. |
-| `SYSLOG_UDP_PORT` | `5514` | Host UDP port published for the router; Docker forwards it to the collector's internal UDP/514 listener. |
-| `SYSLOG_TCP_HOST` | `0.0.0.0` | TCP listener bind address. |
-| `SYSLOG_TCP_PORT` | `6601` | Host TCP port published for senders; Docker forwards it to the collector's internal TCP/601 listener. |
-| `SYSLOG_TIMEZONE` | `Asia/Kolkata` | Time zone used to interpret RFC 3164 timestamps, which do not include an offset. Set it to the sender's time zone. |
-| `ENABLE_SYSLOG_LISTENER` | `true` | Enable UDP and TCP listeners. |
-| `WEB_PORT` | `8080` | Host port for the dashboard. |
-| `WEB_BIND_IP` | `127.0.0.1` | Host address for the dashboard. Keep localhost binding on public servers; use `0.0.0.0` only when the LAN firewall is configured to restrict access. |
-| `CORS_ORIGINS` | `http://localhost:5173,http://localhost` | Comma-separated browser origins. |
-| `LOG_LEVEL` | `INFO` | Python logging level. |
-| `SECRET_KEY` | randomly generated on first install | Private application key stored only in the local `.env`. |
-| `MAX_RECORDS_PER_QUERY` | `10000` | Upper bound for API page size. |
-| `MAX_INGEST_LINES` | `10000` | Maximum lines accepted per HTTP ingest request. |
-| `SUSPICIOUS_IPS` | empty | Optional comma-separated local IP indicators; no external reputation lookup is used. |
-| `MAX_LOG_RETENTION_DAYS` | `90` | Retention period before archive-and-delete. |
-| `ARCHIVE_DIR` | `./data/archive` | CSV archive directory for retention jobs. |
-| `RETENTION_CHECK_HOURS` | `24` | Interval between retention runs. |
-| `SMTP_HOST` / `SMTP_PORT` | unset / `587` | Optional mail transport for future routed alerts. |
-| `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | unset | Optional SMTP authentication and sender settings. |
-| `VITE_API_BASE_URL` | `/api` | Frontend API base URL. |
-| `VITE_WS_URL` | inferred from page origin | Optional WebSocket endpoint override. |
+| `WEB_PORT` | `8080` | Browser dashboard port. |
+| `WEB_BIND_IP` | `127.0.0.1` | Dashboard network binding. Keep local-only on internet-facing servers. |
+| `SYSLOG_UDP_PORT` | `5514` | Host UDP port for router and device logs. |
+| `SYSLOG_TCP_PORT` | `6601` | Optional host TCP syslog port. |
+| `SYSLOG_TIMEZONE` | `Asia/Kolkata` | Time zone used to interpret RFC 3164 timestamps. |
+| `MAX_LOG_RETENTION_DAYS` | `90` | Retention period before old records are archived and removed. |
+| `IMAGE_TAG` | `latest` | Container image release to use after a tagged image has been published. |
+| `BUILD_FROM_SOURCE` | `false` | Use the local source-build Compose overlay when set to `true`. The installer flag sets this automatically. |
 
-## API endpoints reference
+If a port is already in use, change its matching variable in `.env`, restart, and update the router's destination port if you changed a syslog port.
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/health` | Service and database health. |
-| `GET` | `/api/logs` | Paginated, filterable, sortable log events. |
-| `POST` | `/api/ingest` | Parse and store a bounded batch of syslog lines, then queue local anomaly analysis. |
-| `GET` | `/api/stats` | Dashboard totals, type counts, and hourly counts. |
-| `GET/POST` | `/api/devices` | List or register devices. |
-| `GET/PATCH` | `/api/devices/{id}` | Read or update a device, including trusted state and tags. |
-| `GET/PATCH` | `/api/anomalies` | List detections or resolve/update notes. |
-| `GET/POST` | `/api/alerts` | List or create analyst investigations. |
-| `PATCH/DELETE` | `/api/alerts/{id}` | Update status/details or remove an alert. |
-| `GET` | `/api/reports/summary` | Aggregated report payload. |
-| `GET` | `/api/reports/summary.pdf` | Printable PDF export. |
-| `WS` | `/ws/logs` | Stream new logs, anomalies, and devices. |
+## 🧰 Troubleshooting
 
-List endpoints accept `page` and `page_size` and return `items`, `total`, `page`, and `pages`. The log endpoint also accepts `type`, `severity_group`, `source_ip`, `process`, `domain`, `search`, `from_time`, `to_time`, `sort_by`, `sort_dir`, and `source_device`. Ingest returns `anomalies_found: 0` while the background rule worker runs; completed detections are streamed over `/ws/logs`.
+| Problem | Check |
+|---|---|
+| Installer says Docker is not running | Open Docker Desktop on Windows/macOS. On Linux, check that Docker Engine is running and your account can access it. |
+| Dashboard does not open | Run `docker compose ps` and `docker compose logs --tail=100`. Confirm that port 8080 is available or change `WEB_PORT` in `.env`. |
+| No logs appear | Confirm the sender's destination IP, UDP/TCP protocol, port, host firewall, and that the router's remote syslog feature is enabled. |
+| Logs appear with the wrong time | Set `SYSLOG_TIMEZONE` in `.env` to the sender's time zone and restart. |
+| Container image pull fails | A published image may not exist yet. Install using the source-build option shown above. |
+| SQLite database will not open | Ensure the project folder is writable and that `data/` exists. |
+| Need more detail | Run `docker compose logs -f` in the project folder. |
 
-## Troubleshooting
+Docker-published ports can interact differently with host firewalls, particularly UFW. Do not rely on a basic UFW rule alone to restrict a public Docker-published port; use a VPN or a firewall rule that filters traffic before it reaches the container.
 
-- **No syslog events:** Confirm the router's destination IP, UDP port, host firewall rule, and that only one service owns the selected port.
-- **A port is already in use:** Set `WEB_PORT`, `SYSLOG_UDP_PORT`, or `SYSLOG_TCP_PORT` in `.env` to another unused port and restart the app. Update the router destination port when changing a syslog port.
-- **Frontend cannot reach API:** Check that the backend is healthy and that Vite or Nginx proxies `/api` and `/ws` to the backend service name.
-- **SQLite database cannot open:** Ensure the `data/` directory is writable and that `DATABASE_URL` uses `sqlite+aiosqlite`.
-- **CORS errors in a split deployment:** Add the exact frontend origin to `CORS_ORIGINS`, including scheme and port.
-- **TCP logs do not arrive:** Configure the sender for TCP/601; TCP syslog is newline-delimited.
-- **Charts appear empty:** Ingest events with timestamps and DNS query messages, then refresh the dashboard.
+## 🧑‍💻 For developers
 
-This project is intended for a trusted home lab. Put it behind a VPN or authenticated reverse proxy before exposing it beyond the LAN.
+The backend is FastAPI and the frontend is React. GitHub Actions validates the Compose configuration, builds both containers, starts the app, and checks the API health endpoint on pushes and pull requests. A maintainer can publish multi-platform `linux/amd64` and `linux/arm64` images by pushing a version tag such as `v1.0.1`. Published GHCR packages must be public for unauthenticated installs.
+
+For a local non-Docker development setup, use Python 3.11+ for the backend and Node.js for the frontend. The API is served on port 8000 and Vite on port 5173; see the `backend/` and `frontend/` folders for dependencies and project configuration.
+
+## 📄 License
+
+No license is granted. All rights are reserved; public visibility of this repository does not grant permission to reuse, modify, or distribute the source.
